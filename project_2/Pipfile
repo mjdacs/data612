@@ -6,11 +6,13 @@ verify_ssl = true
 [dev-packages]
 
 [packages]
-pandas = "*"
 numpy = "*"
-jupyter = "*"
-sci-kit = "*"
+pandas = "*"
+matplotlib = "*"
+seaborn = "*"
 scikit-learn = "*"
+jupyter = "*"
+ipython = "*"
 
 [requires]
 python_version = "3.7"
