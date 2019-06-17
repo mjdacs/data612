@@ -13,6 +13,8 @@ seaborn = "*"
 scikit-learn = "*"
 jupyter = "*"
 ipython = "*"
+surprise = "*"
+scikit-surprise = "*"
 
 [requires]
 python_version = "3.7"
