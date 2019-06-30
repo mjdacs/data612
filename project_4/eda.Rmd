@@ -1,0 +1,485 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+1. As in your previous assignments, compare the accuracy of at least two recommender system algorithms against your offline data.
+
+2. Implement support for at least one business or user experience goal such as increased serendipity, novelty, or diversity.
+
+3. Compare and report on any change in accuracy before and after you’ve made the change in #2.
+
+4. As part of your textual conclusion, discuss one or more additional experiments that could be performed and/or metrics that could be evaluated only if online evaluation was possible. Also, briefly propose how you would design a reasonable online evaluation environment.
+
+
+```{r}
+library(recommenderlab)
+library(tidyverse)
+```
+
+```{r}
+data("MovieLense")
+```
+
+```{r}
+ratings_movies <- MovieLense[rowCounts(MovieLense) > 50, colCounts(MovieLense) > 100]
+ratings_movies
+```
+
+
+```{r}
+percent_training <- 0.8
+```
+
+
+```{r}
+```
+
+
+```{r}
+min(rowCounts(ratings_movies))
+```
+
+```{r}
+items_to_keep <- 15
+```
+
+Define a threshold with the minimum ratings that is considered "good".
+```{r}
+rating_threshold <- 3
+
+# number of evaluations
+n_eval <- 1
+```
+
+`evaluationScheme` is the function in `recommenderLab` that will handle splitting hte data
+```{r}
+eval_sets <- evaluationScheme(data = ratings_movies, 
+                              method = "split",
+                              train = percent_training,
+                              given = items_to_keep,
+                              goodRating = rating_threshold, 
+                              k = n_eval)
+
+eval_sets
+```
+
+In order to extract the sets, we need to use `getData`. There are three sets:
+`train` `known`, and `unknown`.
+
+```{r}
+getData(eval_sets, "train")
+```
+
+```{r}
+nrow(getData(eval_sets, "train")) / nrow(ratings_movies)
+```
+
+```{r}
+getData(eval_sets, "known")
+```
+
+```{r}
+getData(eval_sets, "unknown")
+```
+
+
+```{r}
+nrow(getData(eval_sets, "known")) / nrow(ratings_movies)
+```
+
+
+```{r}
+unique(rowCounts(getData(eval_sets, "known")))
+```
+
+```{r}
+qplot(rowCounts(getData(eval_sets, "unknown"))) + 
+  geom_histogram(binwidth = 10) +
+  ggtitle("unknown items by the users")
+```
+
+### Using k-fold to validate models
+
+```{r}
+n_fold <- 4
+eval_sets <- evaluationScheme(data = ratings_movies,
+                              method = "cross-validation",
+                              k = n_fold,
+                              given = items_to_keep,
+                              goodRating = rating_threshold)
+
+```
+
+```{r}
+size_sets <- sapply(eval_sets@runsTrain, length)
+size_sets
+```
+
+```{r}
+# Define the model to evalutate, here its Item-Based Collaborative Filtering model 
+model_to_evaluate <- "IBCF"
+model_parameters <- NULL
+
+```
+
+
+```{r}
+eval_recommender <- Recommender(data = getData(eval_sets, "train"),
+                                method = model_to_evaluate,
+                                parameter = model_parameters)
+
+items_to_recommend <- 10
+
+eval_predictions <- predict(object = eval_recommender,
+                            newdata = getData(eval_sets, "known"),
+                            n = items_to_recommend,
+                            type = "ratings")
+class(eval_predictions)
+                                
+```
+
+
+```{r}
+qplot(rowCounts(eval_predictions)) +
+  geom_histogram(binwidth = 10) +
+  ggtitle("Distribution of movies per user")
+```
+
+### The function to measure the accuracy is `calcPredictionAccuracy` and it computes RMSE, MSE, and MAE
+
+```{r}
+eval_accuracy <- calcPredictionAccuracy(x = eval_predictions, 
+                                        data = getData(eval_sets, "unknown"),
+                                        byUser = TRUE)
+head(eval_accuracy)
+```
+
+Lets look at RMSE by user
+
+```{r}
+qplot(eval_accuracy[, "RMSE"]) +
+  geom_histogram(binwidth = 0.1) +
+  ggtitle("Distribution of the RMSE by user")
+```
+
+
+```{r}
+eval_accuracy <- calcPredictionAccuracy(x = eval_predictions, 
+                                        data = getData(eval_sets, "unknown"),
+                                        byUser = FALSE)
+eval_accuracy
+```
+
+
+### Deliverable #1
+#### As in your previous assignments, compare the accuracy of at least two recommender system algorithms against your offline data.
+
+
+```{r}
+data("Jester5k")
+```
+
+```{r}
+dim(Jester5k)
+```
+
+```{r}
+typeof(Jester5k)
+```
+All of the objects in `recommenderLab` are created under the [S4 Object Oriented system](http://adv-r.had.co.nz/S4.html), which presents a different approach to thinking about how the dataset is manipulated and how models are used.
+
+```{r}
+# Summary of ratings data
+jester_df <- as(Jester5k, 'data.frame')
+summary(jester_df$rating) 
+```
+```{r}
+# Total number of ratings
+nratings(Jester5k)
+```
+```{r}
+# Sparsity percentage
+nratings(Jester5k) / (dim(Jester5k)[1] * dim(Jester5k[2]))
+```
+```{r}
+jester_matrix <- spread(jester_df, key = "item", value = "rating")
+jester_matrix
+```
+
+```{r}
+hist(getRatings(Jester5k), breaks=100)
+```
+We can see when we plot a histogram that shows the negative vales occur with similar frequencies and the positive ratgins are more frequent but slope off as you get towards the max rating of 10. 
+
+Let's take a look at the same distribution after normalization.
+
+One by row centering...
+```{r}
+hist(getRatings(normalize(Jester5k, method="center")), breaks = 100)
+```
+
+And the other by Z-score.
+```{r}
+hist(getRatings(normalize(Jester5k, method="Z-score")), breaks = 100)
+```
+We can see the peak ratings range from about 0-2.
+
+Lastly we can take a quick look at how many jokes each user rated and the average rating per joke, by taking the row count and column mean, respectively.
+
+```{r}
+hist(rowCounts(Jester5k), breaks = 50)
+```
+
+
+```{r}
+hist(colMeans(Jester5k), breaks = 20) 
+```
+```{r}
+popular <- Recommender(Jester5k, method = "POPULAR")
+
+```
+
+
+
+
+```{r}
+getModel(popular)$topN
+```
+
+
+```{r}
+worst <- which.max(colMeans(Jester5k))
+cat(JesterJokes[worst])
+
+```
+
+```{r}
+jokes_rm <- Jester5k[rowCounts(Jester5k) > 50]
+
+min(rowCounts(jokes_rm))
+```
+
+
+
+
+The ratings are on a scale of -10 to +10. Since we have a mean rating of 0.85 and a median of 1.46 we can consider that range the average, and certainly not good by joke standards. Jokes often have tough critics so we will consider a rating of 5 a "good" rating, which is at the edge of the 3rd interquartile range.
+```{r}
+eval_set <- evaluationScheme(data = jokes_rm,
+                             method = "split",
+                             train = 0.8,
+                             given = 30,
+                             goodRating = 5)
+ eval_set
+```
+
+
+### UBCF models
+```{r warning=FALSE}
+ubcf_models <- list(
+  ubcf_cos_null = list(name = "UBCF", param = list(method = "cosine", normalize = NULL)),
+  ubcf_prs_null = list(name = "UBCF", param = list(method = "pearson", normalize = NULL)),
+  ubcf_cos_center = list(name = "UBCF", param = list(method = "cosine", normalize = "center")),
+  ubcf_prs_center = list(name = "UBCF", param = list(method = "pearson", normalize = "center")),
+  ubcf_cos_z = list(name = "UBCF", param = list(method = "cosine", normalize = "Z-score")),
+  ubcf_prs_z = list(name = "UBCF", param = list(method = "pearson", normalize = "Z-score"))
+)
+
+ubcf_eval_results <- evaluate(x = eval_set, 
+                              method = ubcf_models, 
+                              n = seq(10, 100, 10)
+                              )
+                                 
+```
+
+
+```{r}
+plot(ubcf_eval_results, "prec/rec", annotate = T, main = "Precision Recall")
+title("UBCF Precision-recall")
+```
+
+```{r}
+plot(ubcf_eval_results, annotate = T) 
+title("UBCF ROC curve")
+```
+
+### IBCF Models
+
+```{r warning=FALSE}
+ibcf_models <- list(
+  ibcf_cos_null = list(name = "IBCF", param = list(method = "cosine", normalize = NULL)),
+  ibcf_prs_null = list(name = "IBCF", param = list(method = "pearson", normalize = NULL)),
+  ibcf_cos_center = list(name = "IBCF", param = list(method = "cosine", normalize = "center")),
+  ibcf_prs_center = list(name = "IBCF", param = list(method = "pearson", normalize = "center")),
+  ibcf_cos_z = list(name = "IBCF", param = list(method = "cosine", normalize = "Z-score")),
+  ibcf_prs_z = list(name = "IBCF", param = list(method = "pearson", normalize = "Z-score"))
+)
+
+ibcf_eval_results <- evaluate(x = eval_set, 
+                              method = ibcf_models, 
+                              n = seq(10, 100, 10)
+                              )
+```
+
+```{r}
+plot(ibcf_eval_results, "prec/rec", annotate = T, main = "Precision Recall")
+title("IBCF Precision-recall")
+```
+
+```{r}
+plot(ibcf_eval_results, annotate = T) 
+title("IBCF ROC curve")
+```
+
+### RANDOM models
+
+```{r warning=FALSE}
+random_models <- list(
+  random_cos_null = list(name = "RANDOM", param = list(method = "cosine", normalize = NULL)),
+  random_prs_null = list(name = "RANDOM", param = list(method = "pearson", normalize = NULL)),
+  random_cos_center = list(name = "RANDOM", param = list(method = "cosine", normalize = "center")),
+  random_prs_center = list(name = "RANDOM", param = list(method = "pearson", normalize = "center")),
+  random_cos_z = list(name = "RANDOM", param = list(method = "cosine", normalize = "Z-score")),
+  random_prs_z = list(name = "RANDOM", param = list(method = "pearson", normalize = "Z-score"))
+)
+
+random_eval_results <- evaluate(x = eval_set, 
+                              method = random_models, 
+                              n = seq(10, 100, 10)
+                              )
+```
+
+```{r}
+plot(random_eval_results, "prec/rec", annotate = T, main = "Precision Recall")
+title("RANDOM Precision-recall")
+```
+```{r}
+plot(random_eval_results, annotate = T) 
+title("RANDOM ROC curve")
+```
+
+```{r}
+popular_models <- list(
+  popular_cos_null = list(name = "POPULAR", param = list(method = "cosine", normalize = NULL)),
+  popular_prs_null = list(name = "POPULAR", param = list(method = "pearson", normalize = NULL)),
+  popular_cos_center = list(name = "POPULAR", param = list(method = "cosine", normalize = "center")),
+  popular_prs_center = list(name = "POPULAR", param = list(method = "pearson", normalize = "center")),
+  popular_cos_z = list(name = "POPULAR", param = list(method = "cosine", normalize = "Z-score")),
+  popular_prs_z = list(name = "POPULAR", param = list(method = "pearson", normalize = "Z-score"))
+)
+```
+
+```{r}
+popular_eval_results <- suppressWarnings(evaluate(x = eval_set, method = popular_models, n = seq(10, 100, 10)))
+```
+
+
+```{r}
+plot(popular_eval_results, "prec/rec", annotate = T, main = "Precision Recall")
+title("POPULAR Precision-recall")
+```
+
+```{r}
+plot(popular_eval_results, annotate = T) 
+title("POPULAR ROC curve")
+```
+
+
+### Model Selection
+
+After looking at the ROC curves on the four methods, it appears that the IBCF
+
+```{r}
+```
+
+
+```{r}
+```
+
+```{r}
+training_set <- getData(eval_set, "train")
+
+known_set <- getData(eval_set, "known")
+
+unknown_set <- getData(eval_set, "unknown")
+```
+
+
+```{r}
+
+ubcf_rec <- Recommender(data = training_set, method = "UBCF")
+
+ibcf_rec <- Recommender(data = training_set, method = "IBCF")
+
+popular_rec <- Recommender(data = training_set, method = "POPULAR")
+
+random_rec <- Recommender(data = training_set, method = "RANDOM")
+```
+
+
+```{r}
+ubcf_model <- predict(ubcf_rec, known_set, type = "ratingMatrix")
+
+ibcf_model <- predict(ibcf_rec, known_set, type = "ratingMatrix")
+
+popular_model <- predict(popular_rec, known_set, type = "ratingMatrix")
+
+random_model <- predict(random_rec, known_set, type = "ratingMatrix")
+
+```
+
+```{r}
+ubcf_prs_z_rec <- Recommender(data = training_set, method = "UBCF", parameter = list(method = "pearson", normalize = "Z-score"))
+
+ibcf_prs_c_rec <- Recommender(data = training_set, method = "IBCF", parameter = list(method = "pearson", normalize = "center"))
+
+popular_cos_z_rec <- Recommender(data = training_set, method = "POPULAR", parameter = list(method = "cosine", normalize = "Z-score"))
+
+random_prs_n_rec <- Recommender(data = training_set, method = "RANDOM", parameter = list(method = "pearson", normalize = NULL))
+```
+
+```{r}
+ubcf_prs_z_model <- predict(ubcf_prs_z_rec, known_set, type = "ratingMatrix")
+
+ibcf_prs_c_model <- predict(ibcf_prs_c_rec, known_set, type = "ratingMatrix")
+
+popular_cos_z_model <- predict(popular_cos_z_rec, known_set, type = "ratingMatrix")
+
+random_prs_n_model <- predict(random_prs_n_rec, known_set, type = "ratingMatrix")
+
+```
+
+```{r}
+error <- rbind(
+  UBCF = calcPredictionAccuracy(ubcf_model, unknown_set),
+  UBCF_prs_z = calcPredictionAccuracy(ubcf_prs_z_model, unknown_set),
+  IBCF = calcPredictionAccuracy(ibcf_model, unknown_set),
+  IBCF_prs_c = calcPredictionAccuracy(ibcf_prs_c_model, unknown_set),
+  POPULAR = calcPredictionAccuracy(popular_model, unknown_set),
+  POPULAR_cos_z = calcPredictionAccuracy(popular_cos_z_model, unknown_set),
+  RANDOM = calcPredictionAccuracy(random_model, unknown_set),
+  RANDOM_prs_n = calcPredictionAccuracy(random_prs_n_model, unknown_set)
+)
+error
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
