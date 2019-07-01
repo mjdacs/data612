@@ -17,160 +17,6 @@ library(recommenderlab)
 library(tidyverse)
 ```
 
-```{r}
-data("MovieLense")
-```
-
-```{r}
-ratings_movies <- MovieLense[rowCounts(MovieLense) > 50, colCounts(MovieLense) > 100]
-ratings_movies
-```
-
-
-```{r}
-percent_training <- 0.8
-```
-
-
-```{r}
-```
-
-
-```{r}
-min(rowCounts(ratings_movies))
-```
-
-```{r}
-items_to_keep <- 15
-```
-
-Define a threshold with the minimum ratings that is considered "good".
-```{r}
-rating_threshold <- 3
-
-# number of evaluations
-n_eval <- 1
-```
-
-`evaluationScheme` is the function in `recommenderLab` that will handle splitting hte data
-```{r}
-eval_sets <- evaluationScheme(data = ratings_movies, 
-                              method = "split",
-                              train = percent_training,
-                              given = items_to_keep,
-                              goodRating = rating_threshold, 
-                              k = n_eval)
-
-eval_sets
-```
-
-In order to extract the sets, we need to use `getData`. There are three sets:
-`train` `known`, and `unknown`.
-
-```{r}
-getData(eval_sets, "train")
-```
-
-```{r}
-nrow(getData(eval_sets, "train")) / nrow(ratings_movies)
-```
-
-```{r}
-getData(eval_sets, "known")
-```
-
-```{r}
-getData(eval_sets, "unknown")
-```
-
-
-```{r}
-nrow(getData(eval_sets, "known")) / nrow(ratings_movies)
-```
-
-
-```{r}
-unique(rowCounts(getData(eval_sets, "known")))
-```
-
-```{r}
-qplot(rowCounts(getData(eval_sets, "unknown"))) + 
-  geom_histogram(binwidth = 10) +
-  ggtitle("unknown items by the users")
-```
-
-### Using k-fold to validate models
-
-```{r}
-n_fold <- 4
-eval_sets <- evaluationScheme(data = ratings_movies,
-                              method = "cross-validation",
-                              k = n_fold,
-                              given = items_to_keep,
-                              goodRating = rating_threshold)
-
-```
-
-```{r}
-size_sets <- sapply(eval_sets@runsTrain, length)
-size_sets
-```
-
-```{r}
-# Define the model to evalutate, here its Item-Based Collaborative Filtering model 
-model_to_evaluate <- "IBCF"
-model_parameters <- NULL
-
-```
-
-
-```{r}
-eval_recommender <- Recommender(data = getData(eval_sets, "train"),
-                                method = model_to_evaluate,
-                                parameter = model_parameters)
-
-items_to_recommend <- 10
-
-eval_predictions <- predict(object = eval_recommender,
-                            newdata = getData(eval_sets, "known"),
-                            n = items_to_recommend,
-                            type = "ratings")
-class(eval_predictions)
-                                
-```
-
-
-```{r}
-qplot(rowCounts(eval_predictions)) +
-  geom_histogram(binwidth = 10) +
-  ggtitle("Distribution of movies per user")
-```
-
-### The function to measure the accuracy is `calcPredictionAccuracy` and it computes RMSE, MSE, and MAE
-
-```{r}
-eval_accuracy <- calcPredictionAccuracy(x = eval_predictions, 
-                                        data = getData(eval_sets, "unknown"),
-                                        byUser = TRUE)
-head(eval_accuracy)
-```
-
-Lets look at RMSE by user
-
-```{r}
-qplot(eval_accuracy[, "RMSE"]) +
-  geom_histogram(binwidth = 0.1) +
-  ggtitle("Distribution of the RMSE by user")
-```
-
-
-```{r}
-eval_accuracy <- calcPredictionAccuracy(x = eval_predictions, 
-                                        data = getData(eval_sets, "unknown"),
-                                        byUser = FALSE)
-eval_accuracy
-```
-
 
 ### Deliverable #1
 #### As in your previous assignments, compare the accuracy of at least two recommender system algorithms against your offline data.
@@ -249,8 +95,8 @@ getModel(popular)$topN
 
 
 ```{r}
-worst <- which.max(colMeans(Jester5k))
-cat(JesterJokes[worst])
+funniest <- which.max(colMeans(Jester5k))
+cat(JesterJokes[funniest])
 
 ```
 
@@ -397,6 +243,7 @@ After looking at the ROC curves on the four methods, it appears that the IBCF
 ```
 
 ```{r}
+# Set the training, known and unknown sets
 training_set <- getData(eval_set, "train")
 
 known_set <- getData(eval_set, "known")
