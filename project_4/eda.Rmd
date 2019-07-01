@@ -1,7 +1,13 @@
 ---
-title: "R Notebook"
-output: html_notebook
+title: "DATA 612 Project 4 - Accuracy and Beyond"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
 ---
+###  By: Michael D'Acampora
+
+The goal of this assignment is give you practice working with accuracy and other recommender system metrics. In this assignment you’re asked to do at least one or (if you like) both of the following: •Work in a small group, and/or  •Choose a different dataset to work with from your previous projects
 
 1. As in your previous assignments, compare the accuracy of at least two recommender system algorithms against your offline data.
 
@@ -12,14 +18,12 @@ output: html_notebook
 4. As part of your textual conclusion, discuss one or more additional experiments that could be performed and/or metrics that could be evaluated only if online evaluation was possible. Also, briefly propose how you would design a reasonable online evaluation environment.
 
 
-```{r}
+```{r message=FALSE}
 library(recommenderlab)
 library(tidyverse)
 ```
 
-
-### Deliverable #1
-#### As in your previous assignments, compare the accuracy of at least two recommender system algorithms against your offline data.
+## Data import and analysis
 
 
 ```{r}
@@ -35,81 +39,87 @@ typeof(Jester5k)
 ```
 All of the objects in `recommenderLab` are created under the [S4 Object Oriented system](http://adv-r.had.co.nz/S4.html), which presents a different approach to thinking about how the dataset is manipulated and how models are used.
 
+
+
 ```{r}
 # Summary of ratings data
 jester_df <- as(Jester5k, 'data.frame')
 summary(jester_df$rating) 
 ```
+The ratings are on a scale of -10 to +10. Since we have a mean rating of 0.85 and a median of 1.46 we can consider that range the average, and certainly not good by joke standards. 
+
 ```{r}
 # Total number of ratings
 nratings(Jester5k)
 ```
+```{r}
+# Number of ratings per user
+summary(rowCounts(Jester5k))
+```
+
 ```{r}
 # Sparsity percentage
 nratings(Jester5k) / (dim(Jester5k)[1] * dim(Jester5k[2]))
 ```
 ```{r}
 jester_matrix <- spread(jester_df, key = "item", value = "rating")
-jester_matrix
+head(jester_matrix, 10)
 ```
+Using `tidyr` and the `gather` method we can take a quick snapshot at what the matrix looks like. However, since this was a `realratingsMatrix` S4 object, it takes more tinkering to get it to do what you're normally used to doing. 
 
-```{r}
-hist(getRatings(Jester5k), breaks=100)
-```
-We can see when we plot a histogram that shows the negative vales occur with similar frequencies and the positive ratgins are more frequent but slope off as you get towards the max rating of 10. 
-
-Let's take a look at the same distribution after normalization.
-
-One by row centering...
-```{r}
-hist(getRatings(normalize(Jester5k, method="center")), breaks = 100)
-```
-
-And the other by Z-score.
-```{r}
-hist(getRatings(normalize(Jester5k, method="Z-score")), breaks = 100)
-```
-We can see the peak ratings range from about 0-2.
-
-Lastly we can take a quick look at how many jokes each user rated and the average rating per joke, by taking the row count and column mean, respectively.
-
-```{r}
-hist(rowCounts(Jester5k), breaks = 50)
-```
-
-
-```{r}
-hist(colMeans(Jester5k), breaks = 20) 
-```
-```{r}
-popular <- Recommender(Jester5k, method = "POPULAR")
-
-```
-
-
-
-
-```{r}
-getModel(popular)$topN
-```
-
-
-```{r}
-funniest <- which.max(colMeans(Jester5k))
-cat(JesterJokes[funniest])
-
-```
-
+Let's reduce the dataset to include only where a user has more than 50 ratings.
 ```{r}
 jokes_rm <- Jester5k[rowCounts(Jester5k) > 50]
 
 min(rowCounts(jokes_rm))
 ```
 
+```{r}
+hist(getRatings(jokes_rm), breaks=100)
+```
+
+We can see when we plot a histogram that shows the negative vales occur with similar frequencies and the positive ratgins are more frequent but slope off as you get towards the max rating of 10. 
+
+Let's take a look at the same distribution after normalization.
+
+One by row centering...
+```{r}
+hist(getRatings(normalize(jokes_rm, method="center")), breaks = 100)
+```
+
+And the other by Z-score.
+```{r}
+hist(getRatings(normalize(jokes_rm, method="Z-score")), breaks = 100)
+```
+
+We can see the peak ratings in this reduced set range from about 0-1.
+
+Lastly we can take a quick look at how many jokes each user rated and the average rating per joke, by taking the row count and column mean, respectively.
+
+```{r}
+hist(rowCounts(jokes_rm), breaks = 50)
+```
+
+
+```{r}
+hist(colMeans(jokes_rm), breaks = 20) 
+```
+
+#### Teehee
+As a quick aside, we can find the max value, or "funniest" joke. Here it is...
+```{r}
+funniest <- which.max(colMeans(Jester5k))
+cat(JesterJokes[funniest])
+```
 
 
 
-The ratings are on a scale of -10 to +10. Since we have a mean rating of 0.85 and a median of 1.46 we can consider that range the average, and certainly not good by joke standards. Jokes often have tough critics so we will consider a rating of 5 a "good" rating, which is at the edge of the 3rd interquartile range.
+## Evaluation
+
+We will take four different recommender models. User-based Collaborative Filtering (UBCF), Item-based Collaborative Filtering (IBCF), Random recommendations (RANDOM), and selections based on Popularity (POPULAR). For each of the four models we will apply six combinations of similarity (cosine and pearson) and normalization (row center, Z-score, none) to them, for a total of 24 models.
+
+First we build an evaluation set, which we use on the `jokes_rm` dataset. The data set is split at 80% training, 20% test. Jokes often have tough critics so we will consider a rating of 5 a "good" rating, which is at the edge of the 3rd interquartile range.
+
 ```{r}
 eval_set <- evaluationScheme(data = jokes_rm,
                              method = "split",
@@ -119,14 +129,17 @@ eval_set <- evaluationScheme(data = jokes_rm,
  eval_set
 ```
 
+Now that the evaluation set is created, we will create and evaluate each of the four subject models, with their six subcomponents, and plot Precision-recall and ROC curves to visually evaluate model performance.
 
 ### UBCF models
 ```{r warning=FALSE}
 ubcf_models <- list(
   ubcf_cos_null = list(name = "UBCF", param = list(method = "cosine", normalize = NULL)),
   ubcf_prs_null = list(name = "UBCF", param = list(method = "pearson", normalize = NULL)),
+  
   ubcf_cos_center = list(name = "UBCF", param = list(method = "cosine", normalize = "center")),
   ubcf_prs_center = list(name = "UBCF", param = list(method = "pearson", normalize = "center")),
+  
   ubcf_cos_z = list(name = "UBCF", param = list(method = "cosine", normalize = "Z-score")),
   ubcf_prs_z = list(name = "UBCF", param = list(method = "pearson", normalize = "Z-score"))
 )
@@ -155,8 +168,10 @@ title("UBCF ROC curve")
 ibcf_models <- list(
   ibcf_cos_null = list(name = "IBCF", param = list(method = "cosine", normalize = NULL)),
   ibcf_prs_null = list(name = "IBCF", param = list(method = "pearson", normalize = NULL)),
+  
   ibcf_cos_center = list(name = "IBCF", param = list(method = "cosine", normalize = "center")),
   ibcf_prs_center = list(name = "IBCF", param = list(method = "pearson", normalize = "center")),
+  
   ibcf_cos_z = list(name = "IBCF", param = list(method = "cosine", normalize = "Z-score")),
   ibcf_prs_z = list(name = "IBCF", param = list(method = "pearson", normalize = "Z-score"))
 )
@@ -179,12 +194,16 @@ title("IBCF ROC curve")
 
 ### RANDOM models
 
+The next two models are to implement support for at least one business or user experience goal such as increased serendipity, novelty, or diversity. The hope is that the RANDOM and POPULAR models can bring serendipity and novelty to the systems.
+
 ```{r warning=FALSE}
 random_models <- list(
   random_cos_null = list(name = "RANDOM", param = list(method = "cosine", normalize = NULL)),
   random_prs_null = list(name = "RANDOM", param = list(method = "pearson", normalize = NULL)),
+  
   random_cos_center = list(name = "RANDOM", param = list(method = "cosine", normalize = "center")),
   random_prs_center = list(name = "RANDOM", param = list(method = "pearson", normalize = "center")),
+  
   random_cos_z = list(name = "RANDOM", param = list(method = "cosine", normalize = "Z-score")),
   random_prs_z = list(name = "RANDOM", param = list(method = "pearson", normalize = "Z-score"))
 )
@@ -204,20 +223,24 @@ plot(random_eval_results, annotate = T)
 title("RANDOM ROC curve")
 ```
 
-```{r}
+```{r warning=FALSE, results="hide"}
 popular_models <- list(
   popular_cos_null = list(name = "POPULAR", param = list(method = "cosine", normalize = NULL)),
   popular_prs_null = list(name = "POPULAR", param = list(method = "pearson", normalize = NULL)),
+  
   popular_cos_center = list(name = "POPULAR", param = list(method = "cosine", normalize = "center")),
   popular_prs_center = list(name = "POPULAR", param = list(method = "pearson", normalize = "center")),
+  
   popular_cos_z = list(name = "POPULAR", param = list(method = "cosine", normalize = "Z-score")),
   popular_prs_z = list(name = "POPULAR", param = list(method = "pearson", normalize = "Z-score"))
 )
+
+popular_eval_results <- evaluate(x = eval_set, 
+                                 method = popular_models, 
+                                 n = seq(10, 100, 10))
 ```
 
-```{r}
-popular_eval_results <- suppressWarnings(evaluate(x = eval_set, method = popular_models, n = seq(10, 100, 10)))
-```
+
 
 
 ```{r}
@@ -231,16 +254,10 @@ title("POPULAR ROC curve")
 ```
 
 
-### Model Selection
+## Model Selection
 
-After looking at the ROC curves on the four methods, it appears that the IBCF
+After looking at the Precision and ROC curves on the four methods, it appears that the different subsets of models were more accurate than others. Three out of the four included Pearson correlation and two of the four had a Z-score normalization. The below code chunks provide a litle more information to the selected models.
 
-```{r}
-```
-
-
-```{r}
-```
 
 ```{r}
 # Set the training, known and unknown sets
@@ -252,7 +269,7 @@ unknown_set <- getData(eval_set, "unknown")
 ```
 
 
-```{r}
+```{r warning=FALSE}
 
 ubcf_rec <- Recommender(data = training_set, method = "UBCF")
 
@@ -275,16 +292,22 @@ random_model <- predict(random_rec, known_set, type = "ratingMatrix")
 
 ```
 
-```{r}
+#### Selected models
+I relied on the ROC curver over the Precision-Recall curves since it seems like we have a fairly balanced dataset.
+```{r warning=FALSE}
+# UBCF Pearson Z-score
 ubcf_prs_z_rec <- Recommender(data = training_set, method = "UBCF", parameter = list(method = "pearson", normalize = "Z-score"))
 
+# IBCF Pearson Row Centering
 ibcf_prs_c_rec <- Recommender(data = training_set, method = "IBCF", parameter = list(method = "pearson", normalize = "center"))
 
+# POPULAR Cosine similarity Z-score
 popular_cos_z_rec <- Recommender(data = training_set, method = "POPULAR", parameter = list(method = "cosine", normalize = "Z-score"))
 
+# RANDOM Pearson WITHOUT normalization
 random_prs_n_rec <- Recommender(data = training_set, method = "RANDOM", parameter = list(method = "pearson", normalize = NULL))
 ```
-
+#### Predictions
 ```{r}
 ubcf_prs_z_model <- predict(ubcf_prs_z_rec, known_set, type = "ratingMatrix")
 
@@ -295,6 +318,10 @@ popular_cos_z_model <- predict(popular_cos_z_rec, known_set, type = "ratingMatri
 random_prs_n_model <- predict(random_prs_n_rec, known_set, type = "ratingMatrix")
 
 ```
+
+##Accuracy
+
+The results below show before and after results with different models selected based on specific similarity normalization methods. The UBCF with Pearson Similarity with Z-score normalization was the model with the lowest error rate across all three measures.
 
 ```{r}
 error <- rbind(
@@ -311,10 +338,19 @@ error
 ```
 
 
+Another item that can be tested is a hybrid recommender system that can take features from one more more recommenders on a weighted basis to obtain a little bit of user/item accuracy coupled with novelty and serentipity from the popularity and random models. There were datatype inconsistencies regarding testing the hybrid system, which is a class object in `recommenderLab`. With a little more time I could have created and evaluated that as well.
 
+The main difference between offline and online datasets is the accuracy testing. With offline, as we used, the recommendations are tested against some "unknown" portion of test set, whereas if we were online that unknown group could be a live user being given a recommendation on the spot. The system can then learn based on users' click rates which would further improve accuracy and tie together even more interesting recommendations. It also seems judging accuracy for serendipity and novelty would be easier on a live online user since these are off-hand recommendations that might be tougher to assess on a cold offline dataset.
 
+As shown here, one could put a bunch of model in a list and run them all, evaluate and choose a model for production. This type of method will continue to get easier with more computing power, but one must slow down and really think through what the goals of the system are, and what kind of experience you want the end user to see. 
 
+## References
 
+[recommenderlab:  A Framework for Developing and Testing Recommendation Algorithms](https://cran.r-project.org/web/packages/recommenderlab/vignettes/recommenderlab.pdf)
+
+[Buidling a Recommendation System with R](https://www.oreilly.com/library/view/building-a-recommendation/9781783554492/)
+
+[Package ‘recommenderlab'](https://cran.r-project.org/web/packages/recommenderlab/recommenderlab.pdf)
 
 
 
